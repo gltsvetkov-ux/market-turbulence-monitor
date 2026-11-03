@@ -39,6 +39,17 @@ class RiskModelTests(unittest.TestCase):
         self.assertFalse(wf.get("validated",True))
         self.assertLess(wf.get("samples",0),950//5)
 
+    def test_unsupported_symbol_is_rejected(self):
+        with self.assertRaises(ValueError):
+            risk_model(self.make_prices(),"UNKNOWN")
+
+    def test_invalid_prices_fail_closed(self):
+        prices=self.make_prices()
+        prices.iloc[-1]=float("nan")
+        m=risk_model(prices,"ES=F")
+        self.assertFalse(m["signal_eligible"])
+        self.assertEqual(m["signal"],"disabled_unvalidated")
+
     def test_short_history_fails_closed(self):
         m=risk_model(self.make_prices(110),"ES=F")
         self.assertEqual(m["status"],"insufficient_history")
