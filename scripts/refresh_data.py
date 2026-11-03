@@ -77,7 +77,7 @@ def risk_model(close, symbol):
     return result
 
 def calc(symbol):
-    frame = yf.download(symbol, period="2y", interval="1d", auto_adjust=False, progress=False, threads=False)
+    frame = yf.download(symbol, period="5y", interval="1d", auto_adjust=False, progress=False, threads=False)
     if frame.empty: raise RuntimeError("Empty history for "+symbol)
     close = frame["Close"]
     if isinstance(close,pd.DataFrame): close=close.iloc[:,0]
@@ -86,6 +86,10 @@ def calc(symbol):
     if not np.isfinite(close.to_numpy()).all() or (close<=0).any(): raise RuntimeError("Invalid/non-positive prices for "+symbol)
     if not close.index.is_monotonic_increasing or close.index.has_duplicates: raise RuntimeError("Invalid dates for "+symbol)
     r=np.log(close).diff().dropna()
+    # Futures continuation can contain contract-roll discontinuities. Flag them; do not hide them.
+    large_jumps=r[np.abs(r)>0.08]
+    roll_warning=bool(len(large_jumps)>0)
+    jump_dates=[x.strftime("%Y-%m-%d") for x in large_jumps.index]
     if not np.isfinite(r.to_numpy()).all(): raise RuntimeError("Invalid returns for "+symbol)
     vol20=float(r.tail(20).std()*math.sqrt(252)*100)
     vol60=float(r.tail(60).std()*math.sqrt(252)*100)
@@ -101,9 +105,12 @@ def calc(symbol):
             "vol_percentile_2y":round(percentile,1),"drawdown_pct":round(drawdown,2),
             "regime":("high" if percentile>=80 else "elevated" if percentile>=60 else "normal"),
             "observations":len(close),"risk_model":risk_model(close,symbol),
+            "data_quality":{"large_daily_log_returns_over_8pct":len(large_jumps),
+              "suspect_dates":jump_dates[:20],"roll_adjustment_verified":False,
+              "warning":"Continuous futures contract rolls are not verified" if not roll_warning else "Large daily jumps detected; possible contract roll or genuine volatility"},
             "history":[{"date":d,"close":round(float(v),2)} for d,v in zip(dates,close.values)]}
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"source":"Yahoo Finance via yfinance","method":"20d annualized realized volatility; percentile within available 2y sample; experimental 5d downside-risk conditional frequency with expanding walk-forward validation; not a trade forecast","markets":{},"errors":{}}
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"source":"Yahoo Finance via yfinance; ES=F and NQ=F continuous front-month proxies; roll adjustments unverified","method":"20d annualized realized volatility; percentile within available 2y sample; experimental 5d downside-risk conditional frequency with expanding walk-forward validation; not a trade forecast","markets":{},"errors":{}}
     for name,ticker in {"ES":"ES=F","NQ":"NQ=F"}.items():
         try: result["markets"][name]=calc(ticker)
         except Exception as exc: result["errors"][name]=str(exc)
