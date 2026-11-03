@@ -9,9 +9,12 @@ def risk_model(close, symbol):
     """Expanding-window, strictly past-outcome conditional risk model.
     Event: within next five daily closes, loss of at least 2% ES / 3% NQ
     relative to signal-day close. No trades or direction forecast."""
+    if symbol not in ("ES=F","NQ=F"): raise ValueError("Unsupported futures symbol: "+str(symbol))
     threshold = 0.02 if symbol == "ES=F" else 0.03
     horizon = 5
     values = close.to_numpy(dtype=float)
+    if len(values)<250 or not np.isfinite(values).all() or np.any(values<=0):
+        return {"status":"insufficient_history","signal":"disabled_unvalidated","signal_eligible":False,"threshold_pct":round(threshold*100,1)}
     returns = np.diff(np.log(values), prepend=np.nan)
     vol = pd.Series(returns).rolling(20).std().to_numpy() * math.sqrt(252)
     features = []
@@ -40,12 +43,12 @@ def risk_model(close, symbol):
         p=(sum(matches)+20*base)/(len(matches)+20)
         predictions.append((t,float(p),outcome[t],float(base)))
     current=features[-1] if features else None
-    if current is None: return {"status":"insufficient_history"}
+    if current is None: return {"status":"insufficient_history","signal":"disabled_unvalidated","signal_eligible":False,"threshold_pct":round(threshold*100,1)}
     t,bucket,momentum=current
     eligible=[(i,b) for i,b,_ in features if i+horizon<t and i in outcome]
     matches=[outcome[i] for i,b in eligible if b==bucket]
     if len(eligible)<120 or len(matches)<25:
-        return {"status":"insufficient_history","regime":bucket,"matching_samples":len(matches)}
+        return {"status":"insufficient_history","regime":bucket,"matching_samples":len(matches),"signal":"disabled_unvalidated","signal_eligible":False,"threshold_pct":round(threshold*100,1)}
     base=float(np.mean([outcome[i] for i,_ in eligible]))
     prob=float((sum(matches)+20*base)/(len(matches)+20))
     result={"status":"experimental","event":"5d_close_drawdown","threshold_pct":round(threshold*100,1),
@@ -65,7 +68,7 @@ def risk_model(close, symbol):
             "baseline_brier":round(baseline,4), "beats_baseline":bool(wins),
             "validated":False,
             "evaluation":"nonoverlapping_5d_test_labels; expanding_train; embargo_5d",
-            "limitations":"Only 2y of unverified continuous futures history; contract rolls and calibration not independently validated"}
+            "limitations":"Unverified continuous futures roll adjustments; calibration and trading costs not independently validated"}
     else:
         result["walk_forward"] = {"samples":len(independent),"validated":False,
           "evaluation":"nonoverlapping_5d_test_labels","limitations":"Insufficient independent tests"}
@@ -110,7 +113,7 @@ def calc(symbol):
               "warning":"Continuous futures contract rolls are not verified" if not roll_warning else "Large daily jumps detected; possible contract roll or genuine volatility"},
             "history":[{"date":d,"close":round(float(v),2)} for d,v in zip(dates,close.values)]}
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"source":"Yahoo Finance via yfinance; ES=F and NQ=F continuous front-month proxies; roll adjustments unverified","method":"20d annualized realized volatility; percentile within available 2y sample; experimental 5d downside-risk conditional frequency with expanding walk-forward validation; not a trade forecast","markets":{},"errors":{}}
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"source":"Yahoo Finance via yfinance; ES=F and NQ=F continuous front-month proxies; roll adjustments unverified","method":"20d realized volatility; percentile within available sample (up to 5y); experimental 5d downside-risk model with nonoverlapping walk-forward validation; trading signals disabled","markets":{},"errors":{}}
     for name,ticker in {"ES":"ES=F","NQ":"NQ=F"}.items():
         try: result["markets"][name]=calc(ticker)
         except Exception as exc: result["errors"][name]=str(exc)
