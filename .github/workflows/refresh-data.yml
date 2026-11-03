@@ -20,7 +20,28 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install --disable-pip-version-check yfinance pandas numpy
+      - run: python -m py_compile scripts/refresh_data.py
       - run: python scripts/refresh_data.py
+      - name: Validate generated snapshot
+        run: |
+          python - <<'PY'
+          import json, datetime, math
+          d=json.load(open('data.json'))
+          for k in ('ES','NQ'):
+              m=d['markets'][k]
+              h=m['history']
+              assert len(h)>=250, (k,'short history')
+              assert all(math.isfinite(float(x['close'])) and x['close']>0 for x in h)
+              dates=[x['date'] for x in h]
+              assert dates==sorted(set(dates)),(k,'duplicate or unordered dates')
+              assert dates[-1]==m['asof']
+              assert m['risk_model']['signal_eligible'] is False
+              assert m['risk_model']['signal']=='disabled_unvalidated'
+              assert m['data_quality']['roll_adjustment_verified'] is False
+              age=(datetime.date.today()-datetime.date.fromisoformat(m['asof'])).days
+              assert 0<=age<=5,(k,'stale market data',age)
+          print('Validated ES/NQ snapshots; risk signals disabled pending independent validation')
+          PY
       - name: Commit snapshot only if changed
         run: |
           git config user.name "mtm-data-bot"
