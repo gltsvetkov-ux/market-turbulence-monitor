@@ -50,10 +50,10 @@ document.getElementById('csv').addEventListener('change',async e=>{const f=e.tar
  signal.querySelector('.value').textContent=high.length?'Висока':elevated.length?'Повишена':'Нормална';
  signal.querySelector('.tag').textContent='Наблюдение на волатилността · НЕ е търговски сигнал';
  const modelLines=keys.map(k=>{const m=data.markets[k].risk_model;if(!m||m.status!=='experimental')return k+': моделът очаква нови данни или няма достатъчна история';return k+': риск от спад ≥'+m.threshold_pct+'% за 5 сесии: '+m.probability_pct+'% (базова честота '+m.base_rate_pct+'%, '+m.matching_samples+' сходни наблюдения)';});
- const riskTitle=document.createElement('div');riskTitle.className='notice';riskTitle.textContent='MTM Risk Model — НЕВАЛИДИРАН. Историческата проверка от 03.11.2026 не превъзхожда базовия модел (ES: 0.1331 срещу 0.1264; NQ: 0.1421 срещу 0.1372). Търговските сигнали са изключени. '+modelLines.join(' | ');
+ const riskTitle=document.createElement('div');riskTitle.className='notice';riskTitle.textContent='MTM Risk Model — НЕВАЛИДИРАН. Неприпокриващият се 5-дневен walk-forward тест не превъзхожда базовия модел. Търговските сигнали са изключени. '+modelLines.join(' | ');
  document.getElementById('overview').appendChild(riskTitle);
  const checks=keys.map(k=>{const m=data.markets[k].risk_model;if(!m||!m.walk_forward)return k+': няма достатъчно walk-forward резултати';const w=m.walk_forward;return k+': '+w.samples+' проверки · Brier '+w.brier+' · базов Brier '+w.baseline_brier+' · '+(w.beats_baseline?'по-добър от базовия модел':'НЕ превъзхожда базовия модел');});
- document.getElementById('model-validation').textContent=checks.join(' | ')+' · Оценката е предварителна: припокриващи се петдневни изходи, ограничена история, липсват разходи и slippage. Сигналите остават изключени.';
+ document.getElementById('model-validation').textContent=checks.join(' | ')+' · Оценката е предварителна: 56 неприпокриващи се петдневни тестови прозореца на пазар, ограничена история, непроверено ролване на контрактите, липсват разходи и slippage. Сигналите остават изключени.';
  }
  const stale=age>36;
  box.innerHTML='<strong>Публични данни:</strong> '+(stale?'ОСТАРЕЛИ · ':'')+'Обновени '+new Date(data.generated_at).toLocaleString('bg-BG')+' · Yahoo Finance · приблизително '+Math.round(age)+' ч. назад. Изчисленията са описателни, не са прогнози. '+(Object.keys(data.errors||{}).length?'Непълни данни за '+Object.keys(data.errors).join(', ')+'.':'');
