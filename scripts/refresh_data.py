@@ -93,6 +93,22 @@ def risk_model(close, symbol):
         raw_comparable_brier = float(np.mean([(r-y)**2 for _,r,a,y,b in calibrated_tests]))
         comparable_baseline = float(np.mean([(b-y)**2 for _,r,a,y,b in calibrated_tests]))
         calibration_bias = float(np.mean([a-y for _,r,a,y,b in calibrated_tests]))
+        # Chronological last-20% diagnostic, evaluated after all calibration rules are fixed.
+        holdout = calibrated_tests[int(len(calibrated_tests)*0.8):]
+        if len(holdout) >= 20:
+            # Row format: (anchor, raw, adjusted, outcome, baseline).
+            calibrated_holdout = float(np.mean([(a-y)**2 for _,r,a,y,b in holdout]))
+            raw_holdout = float(np.mean([(r-y)**2 for _,r,a,y,b in holdout]))
+            baseline_holdout = float(np.mean([(b-y)**2 for _,r,a,y,b in holdout]))
+            result["calibration"]["chronological_holdout"] = {
+                "samples":len(holdout),
+                "raw_brier":round(raw_holdout,5),
+                "calibrated_brier":round(calibrated_holdout,5),
+                "baseline_brier":round(baseline_holdout,5),
+                "beats_baseline":bool(calibrated_holdout < baseline_holdout),
+                "pristine_holdout":False,
+                "limitation":"Historical data previously examined during development; prospective confirmation required"
+            }
         result["calibration"]["out_of_sample"] = {
             "samples":len(calibrated_tests),
             "calibrated_brier":round(adjusted_brier,5),
