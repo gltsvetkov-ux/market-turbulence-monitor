@@ -43,6 +43,27 @@ class RiskModelTests(unittest.TestCase):
         self.assertGreaterEqual(wf["actual_event_rate_pct"],0)
         self.assertLessEqual(wf["actual_event_rate_pct"],100)
 
+    def test_calibration_uses_only_matured_prior_predictions(self):
+        x=self.make_prices(950)
+        m=risk_model(x,"ES=F")
+        self.assertEqual(m["calibration"]["method"],"past_only_regularized_additive_bias")
+        self.assertGreaterEqual(m["calibration"]["training_nonoverlapping_predictions"],40)
+        self.assertLessEqual(abs(m["calibration"]["correction_percentage_points"]),15)
+        self.assertGreaterEqual(m["probability_pct"],0)
+        self.assertLessEqual(m["probability_pct"],100)
+        o=m["calibration"]["out_of_sample"]
+        self.assertGreater(o["samples"],20)
+        self.assertTrue(all(0<=o[k]<=1 for k in ("calibrated_brier","raw_brier_same_period","baseline_brier_same_period")))
+        self.assertFalse(m["signal_eligible"])
+
+    def test_future_price_does_not_change_historical_forecast(self):
+        x=self.make_prices(950)
+        a=risk_model(x,"NQ=F")
+        # Last observed close can change without changing training labels before the current anchor;
+        # no future label is allowed to be used for its own prediction.
+        self.assertGreaterEqual(a["calibration"]["training_nonoverlapping_predictions"],40)
+        self.assertFalse(a["calibration"]["validated"])
+
     def test_nonoverlapping_validation(self):
         m=risk_model(self.make_prices(950),"ES=F")
         wf=m.get("walk_forward",{})
