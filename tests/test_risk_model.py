@@ -32,6 +32,17 @@ class RiskModelTests(unittest.TestCase):
         self.assertFalse(earlier.get("signal_eligible",False))
         self.assertFalse(extended.get("signal_eligible",False))
 
+    def test_deterministic_repeated_evaluation(self):
+        x=self.make_prices(950)
+        a=risk_model(x,"ES=F")
+        b=risk_model(x,"ES=F")
+        self.assertEqual(a,b)
+        wf=a["walk_forward"]
+        self.assertGreaterEqual(wf["samples"],20)
+        self.assertLessEqual(wf["brier_improvement_ci95"][0],wf["brier_improvement_ci95"][1])
+        self.assertGreaterEqual(wf["actual_event_rate_pct"],0)
+        self.assertLessEqual(wf["actual_event_rate_pct"],100)
+
     def test_nonoverlapping_validation(self):
         m=risk_model(self.make_prices(950),"ES=F")
         wf=m.get("walk_forward",{})
