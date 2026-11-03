@@ -11,4 +11,35 @@
 const tabs=document.querySelectorAll('[data-tab]');tabs.forEach(b=>b.addEventListener('click',()=>{tabs.forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab))}));
 const canvas=document.getElementById('chart'),ctx=canvas.getContext('2d');function draw(v){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#334155';for(let i=1;i<5;i++){ctx.beginPath();ctx.moveTo(0,i*56);ctx.lineTo(1000,i*56);ctx.stroke()}if(v.length<2)return;let mn=Math.min(...v),mx=Math.max(...v);if(mx===mn)mx=mn+1;ctx.strokeStyle='#60a5fa';ctx.lineWidth=2;ctx.beginPath();v.forEach((n,i)=>{const x=i/(v.length-1)*990+5,y=270-(n-mn)/(mx-mn)*255;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
 document.getElementById('csv').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const raw=await f.text();const lines=raw.trim().split(/\r?\n/);const header=lines.shift().split(',').map(x=>x.trim().toLowerCase());const date=header.indexOf('date'),close=header.indexOf('close');const status=document.getElementById('file-status');if(date<0||close<0){status.textContent='Невалиден CSV: нужни са Date и Close.';draw([]);return}const vals=lines.map(s=>s.split(',')).map(x=>Number(x[close])).filter(Number.isFinite);if(vals.length<2){status.textContent='Недостатъчно валидни стойности.';draw([]);return}draw(vals);status.textContent=document.getElementById('market').value+': '+vals.length+' реда от '+f.name+' (локално заредени; без модел или сигнали).'});
+</script><script>
+(async function(){
+ const box=document.querySelector('.notice');
+ try{
+ const response=await fetch('./data.json?ts='+Date.now(),{cache:'no-store'});
+ if(!response.ok)throw new Error('Няма публикуван snapshot');
+ const data=await response.json();
+ const age=(Date.now()-Date.parse(data.generated_at))/3600000;
+ const keys=['ES','NQ']; const cards=document.querySelectorAll('#overview .card');
+ keys.forEach((key,i)=>{
+  const m=data.markets?.[key];const c=cards[i+1];if(!m)return;
+  c.querySelector('.value').textContent=m.close.toLocaleString('en-US');
+  c.querySelector('.tag').textContent='20d волатилност '+m.vol20_pct+'% · '+m.regime;
+ });
+ const mlist=keys.filter(k=>data.markets?.[k]);
+ if(mlist.length){const avg=mlist.reduce((s,k)=>s+data.markets[k].vol_percentile_2y,0)/mlist.length;
+ cards[0].querySelector('.value').textContent=Math.round(avg)+' / 100';
+ cards[0].querySelector('.tag').textContent='Среден исторически процентил на 20d волатилност';
+ }
+ const stale=age>36;
+ box.innerHTML='<strong>Публични данни:</strong> '+(stale?'ОСТАРЕЛИ · ':'')+'Обновени '+new Date(data.generated_at).toLocaleString('bg-BG')+' · Yahoo Finance · приблизително '+Math.round(age)+' ч. назад. Изчисленията са описателни, не са прогнози. '+(Object.keys(data.errors||{}).length?'Непълни данни за '+Object.keys(data.errors).join(', ')+'.':'');
+ if(stale)box.style.borderLeftColor='#ef4444';
+ const market=document.getElementById('market');
+ const input=document.getElementById('csv');
+ const label=document.createElement('p');label.className='muted';label.textContent='Автоматично заредена историческа серия (публичен източник). CSV файлът може да замени графиката само в този браузър.';
+ input.parentNode.parentNode.insertBefore(label,input.parentNode);
+ function redraw(){const m=data.markets?.[market.value];if(m&&Array.isArray(m.history)){draw(m.history.map(x=>x.close));document.getElementById('file-status').textContent=market.value+': '+m.observations+' наблюдения · '+m.asof+' · 60d волатилност '+m.vol60_pct+'% · спад от връх '+m.drawdown_pct+'%';}}
+ market.addEventListener('change',redraw);redraw();
+ const system=document.querySelectorAll('#system .card');system[1].querySelector('p').textContent=stale?'Публичен snapshot е остарял':'Публичен snapshot е наличен';
+ }catch(e){box.innerHTML='<strong>Данни:</strong> Автоматичният snapshot още не е наличен. Пазарни стойности и сигнали не се показват.'}
+})();
 </script></body></html>
