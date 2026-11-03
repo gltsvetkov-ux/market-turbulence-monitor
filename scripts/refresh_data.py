@@ -60,6 +60,49 @@ def risk_model(close, symbol):
     # Train strictly on outcomes whose full 5-day horizon has ended.
     independent = [x for x in predictions if x[0] % horizon == 0]
     # Keep all five-day test labels disjoint. Training labels must finish before each test anchor.
+    # Causal, regularized additive calibration: use only prior, fully matured,
+    # nonoverlapping out-of-sample predictions. Never fit to the test label.
+    def calibrate(anchor, raw):
+        prior = [x for x in independent if x[0] + horizon < anchor]
+        if len(prior) < 40:
+            return float(raw), 0, 0.0
+        bias = float(np.mean([y - p for _, p, y, _ in prior]))
+        correction = float(np.clip(bias * len(prior) / (len(prior) + 40), -0.15, 0.15))
+        return float(np.clip(raw + correction, 0.001, 0.999)), len(prior), correction
+
+    calibrated_tests = []
+    for anchor, raw, observed, baseline_p in independent:
+        adjusted, count, correction = calibrate(anchor, raw)
+        if count >= 40:
+            calibrated_tests.append((anchor, raw, adjusted, observed, baseline_p))
+    current_adjusted, calibration_samples, calibration_correction = calibrate(t, prob)
+    result["raw_probability_pct"] = round(100 * prob, 1)
+    result["calibrated_probability_pct"] = round(100 * current_adjusted, 1)
+    result["probability_pct"] = round(100 * current_adjusted, 1)
+    result["calibration"] = {
+        "method":"past_only_regularized_additive_bias",
+        "training_nonoverlapping_predictions":calibration_samples,
+        "correction_percentage_points":round(100 * calibration_correction, 2),
+        "minimum_samples":40,
+        "prior_shrinkage":40,
+        "max_absolute_correction_pp":15,
+        "validated":False
+    }
+    if calibrated_tests:
+        adjusted_brier = float(np.mean([(a-y)**2 for _,r,a,y,b in calibrated_tests]))
+        raw_comparable_brier = float(np.mean([(r-y)**2 for _,r,a,y,b in calibrated_tests]))
+        comparable_baseline = float(np.mean([(b-y)**2 for _,r,a,y,b in calibrated_tests]))
+        calibration_bias = float(np.mean([a-y for _,r,a,y,b in calibrated_tests]))
+        result["calibration"]["out_of_sample"] = {
+            "samples":len(calibrated_tests),
+            "calibrated_brier":round(adjusted_brier,5),
+            "raw_brier_same_period":round(raw_comparable_brier,5),
+            "baseline_brier_same_period":round(comparable_baseline,5),
+            "mean_forecast_minus_event_rate_pp":round(100*calibration_bias,2),
+            "improves_raw":bool(adjusted_brier < raw_comparable_brier),
+            "beats_baseline":bool(adjusted_brier < comparable_baseline)
+        }
+
     if len(independent) >= 20:
         brier = float(np.mean([(p-y)**2 for _,p,y,_ in independent]))
         baseline = float(np.mean([(b-y)**2 for _,p,y,b in independent]))
