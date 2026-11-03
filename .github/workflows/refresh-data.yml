@@ -20,9 +20,10 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install --disable-pip-version-check yfinance pandas numpy
-      - run: python -m py_compile scripts/refresh_data.py tests/test_risk_model.py
+      - run: python -m py_compile scripts/refresh_data.py scripts/prospective_validation.py tests/test_risk_model.py
       - run: python -m unittest discover -s tests -v
       - run: python scripts/refresh_data.py
+      - run: python scripts/prospective_validation.py
       - name: Validate generated snapshot
         run: |
           python - <<'PY'
@@ -47,7 +48,7 @@ jobs:
         run: |
           git config user.name "mtm-data-bot"
           git config user.email "mtm-data-bot@users.noreply.github.com"
-          git add data.json
+          git add data.json prospective_forecasts.json
           if ! git diff --cached --quiet; then
             git commit -m "Refresh ES NQ public market snapshot"
             git push
