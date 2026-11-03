@@ -59,12 +59,27 @@ def risk_model(close, symbol):
     # Non-overlapping evaluation anchors: only one 5-day label per block.
     # Train strictly on outcomes whose full 5-day horizon has ended.
     independent = [x for x in predictions if x[0] % horizon == 0]
+    # Keep all five-day test labels disjoint. Training labels must finish before each test anchor.
     if len(independent) >= 20:
         brier = float(np.mean([(p-y)**2 for _,p,y,_ in independent]))
         baseline = float(np.mean([(b-y)**2 for _,p,y,b in independent]))
         wins = brier < baseline
+        actual_rate = float(np.mean([y for _,p,y,b in independent]))
+        forecast_mean = float(np.mean([p for _,p,y,b in independent]))
+        skill = 1.0 - brier/baseline if baseline > 0 else None
+        # Block-bootstrap the paired loss difference to avoid mistaking tiny gains for proof.
+        losses = np.asarray([(b-y)**2-(p-y)**2 for _,p,y,b in independent], dtype=float)
+        rng = np.random.default_rng(20261103)
+        draws = rng.integers(0,len(losses),size=(1000,len(losses)))
+        improvements = losses[draws].mean(axis=1)
+        ci_low,ci_high = np.percentile(improvements,[2.5,97.5])
         result["walk_forward"] = {
             "samples":len(independent), "brier":round(brier,4),
+            "actual_event_rate_pct":round(100*actual_rate,1),
+            "mean_forecast_pct":round(100*forecast_mean,1),
+            "brier_skill_score":round(float(skill),4) if skill is not None else None,
+            "brier_improvement_ci95":[round(float(ci_low),5),round(float(ci_high),5)],
+            "statistically_positive":bool(ci_low>0),
             "baseline_brier":round(baseline,4), "beats_baseline":bool(wins),
             "validated":False,
             "evaluation":"nonoverlapping_5d_test_labels; expanding_train; embargo_5d",
