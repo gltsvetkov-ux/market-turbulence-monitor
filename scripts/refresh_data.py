@@ -57,7 +57,9 @@ def risk_model(close, symbol):
         brier=np.mean([(p-y)**2 for _,p,y,_ in predictions])
         baseline=np.mean([(b-y)**2 for _,p,y,b in predictions])
         result["walk_forward"]={"samples":len(predictions),"brier":round(float(brier),4),
-            "baseline_brier":round(float(baseline),4),"beats_baseline":bool(brier<baseline)}
+            "baseline_brier":round(float(baseline),4),"beats_baseline":bool(brier<baseline),"validated":bool(brier<baseline and len(predictions)>=100),"evaluation":"expanding_past_only_with_overlapping_5d_labels"}
+    result["signal_eligible"]=bool(result.get("walk_forward",{}).get("validated",False))
+    if not result["signal_eligible"]: result["signal"]="disabled_unvalidated"
     return result
 
 def calc(symbol):
