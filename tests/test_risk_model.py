@@ -64,6 +64,16 @@ class RiskModelTests(unittest.TestCase):
         self.assertGreaterEqual(a["calibration"]["training_nonoverlapping_predictions"],40)
         self.assertFalse(a["calibration"]["validated"])
 
+    def test_chronological_holdout_is_reported_and_not_pristine(self):
+        for symbol in ("ES=F","NQ=F"):
+            m=risk_model(self.make_prices(950),symbol)
+            h=m["calibration"]["chronological_holdout"]
+            self.assertGreaterEqual(h["samples"],20)
+            self.assertFalse(h["pristine_holdout"])
+            self.assertGreaterEqual(h["calibrated_brier"],0)
+            self.assertGreaterEqual(h["baseline_brier"],0)
+            self.assertFalse(m["signal_eligible"])
+
     def test_nonoverlapping_validation(self):
         m=risk_model(self.make_prices(950),"ES=F")
         wf=m.get("walk_forward",{})
