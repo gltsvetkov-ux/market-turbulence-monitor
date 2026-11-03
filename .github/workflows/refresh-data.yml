@@ -1,5 +1,10 @@
 name: Refresh MTM market snapshot
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/refresh_data.py'
+      - '.github/workflows/refresh-data.yml'
   schedule:
     - cron: '17 7,13,19 * * 1-5'
   workflow_dispatch:
