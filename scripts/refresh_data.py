@@ -53,13 +53,27 @@ def risk_model(close, symbol):
       "base_rate_pct":round(100*base,1),"matching_samples":len(matches),
       "training_samples":len(eligible),"momentum20_pct":round(100*momentum,2),
       "signal":("risk_high" if prob>=max(0.35,base*1.5) else "risk_elevated" if prob>=max(0.2,base*1.2) else "risk_normal")}
-    if len(predictions)>=30:
-        brier=np.mean([(p-y)**2 for _,p,y,_ in predictions])
-        baseline=np.mean([(b-y)**2 for _,p,y,b in predictions])
-        result["walk_forward"]={"samples":len(predictions),"brier":round(float(brier),4),
-            "baseline_brier":round(float(baseline),4),"beats_baseline":bool(brier<baseline),"validated":bool(brier<baseline and len(predictions)>=100),"evaluation":"expanding_past_only_with_overlapping_5d_labels"}
-    result["signal_eligible"]=bool(result.get("walk_forward",{}).get("validated",False))
-    if not result["signal_eligible"]: result["signal"]="disabled_unvalidated"
+    # Non-overlapping evaluation anchors: only one 5-day label per block.
+    # Train strictly on outcomes whose full 5-day horizon has ended.
+    independent = [x for x in predictions if x[0] % horizon == 0]
+    if len(independent) >= 20:
+        brier = float(np.mean([(p-y)**2 for _,p,y,_ in independent]))
+        baseline = float(np.mean([(b-y)**2 for _,p,y,b in independent]))
+        wins = brier < baseline
+        result["walk_forward"] = {
+            "samples":len(independent), "brier":round(brier,4),
+            "baseline_brier":round(baseline,4), "beats_baseline":bool(wins),
+            "validated":False,
+            "evaluation":"nonoverlapping_5d_test_labels; expanding_train; embargo_5d",
+            "limitations":"Only 2y of unverified continuous futures history; contract rolls and calibration not independently validated"}
+    else:
+        result["walk_forward"] = {"samples":len(independent),"validated":False,
+          "evaluation":"nonoverlapping_5d_test_labels","limitations":"Insufficient independent tests"}
+    # Do not turn on trade signals merely because one backtest beats baseline.
+    # Require independent contract-roll validation, longer data, calibration,
+    # and transaction-cost tests before any live trading recommendation.
+    result["signal_eligible"]=False
+    result["signal"]="disabled_unvalidated"
     return result
 
 def calc(symbol):
@@ -68,7 +82,7 @@ def calc(symbol):
     close = frame["Close"]
     if isinstance(close,pd.DataFrame): close=close.iloc[:,0]
     close = pd.to_numeric(close,errors="coerce").dropna()
-    if len(close)<100: raise RuntimeError("Insufficient observations for "+symbol)
+    if len(close)<250: raise RuntimeError("Insufficient observations for "+symbol)
     if not np.isfinite(close.to_numpy()).all() or (close<=0).any(): raise RuntimeError("Invalid/non-positive prices for "+symbol)
     if not close.index.is_monotonic_increasing or close.index.has_duplicates: raise RuntimeError("Invalid dates for "+symbol)
     r=np.log(close).diff().dropna()
