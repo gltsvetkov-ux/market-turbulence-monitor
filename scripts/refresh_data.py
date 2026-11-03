@@ -67,7 +67,7 @@ def risk_model(close, symbol):
         actual_rate = float(np.mean([y for _,p,y,b in independent]))
         forecast_mean = float(np.mean([p for _,p,y,b in independent]))
         skill = 1.0 - brier/baseline if baseline > 0 else None
-        # Block-bootstrap the paired loss difference to avoid mistaking tiny gains for proof.
+        # Paired bootstrap over nonoverlapping 5-session test windows.
         losses = np.asarray([(b-y)**2-(p-y)**2 for _,p,y,b in independent], dtype=float)
         rng = np.random.default_rng(20261103)
         draws = rng.integers(0,len(losses),size=(1000,len(losses)))
@@ -80,6 +80,7 @@ def risk_model(close, symbol):
             "brier_skill_score":round(float(skill),4) if skill is not None else None,
             "brier_improvement_ci95":[round(float(ci_low),5),round(float(ci_high),5)],
             "statistically_positive":bool(ci_low>0),
+            "confidence_method":"paired_iid_bootstrap_nonoverlapping_5session_windows_1000_reps",
             "baseline_brier":round(baseline,4), "beats_baseline":bool(wins),
             "validated":False,
             "evaluation":"nonoverlapping_5d_test_labels; expanding_train; embargo_5d",
