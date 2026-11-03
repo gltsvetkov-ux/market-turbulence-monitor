@@ -53,11 +53,13 @@ document.getElementById('csv').addEventListener('change',async e=>{const f=e.tar
  const riskTitle=document.createElement('div');riskTitle.className='notice';riskTitle.textContent='MTM Risk Model — НЕВАЛИДИРАН. Неприпокриващият се 5-дневен walk-forward тест не превъзхожда базовия модел. Търговските сигнали са изключени. '+modelLines.join(' | ');
  document.getElementById('overview').appendChild(riskTitle);
  const checks=keys.map(k=>{const m=data.markets[k].risk_model;if(!m||!m.walk_forward)return k+': няма достатъчно walk-forward резултати';const w=m.walk_forward;return k+': '+w.samples+' проверки · Brier '+w.brier+' · базов Brier '+w.baseline_brier+' · '+(w.beats_baseline?'по-добър от базовия модел':'НЕ превъзхожда базовия модел');});
- document.getElementById('model-validation').textContent=checks.join(' | ')+' · Оценката е предварителна: 56 неприпокриващи се петдневни тестови прозореца на пазар, ограничена история, непроверено ролване на контрактите, липсват разходи и slippage. Сигналите остават изключени.';
+ document.getElementById('model-validation').textContent=checks.join(' | ')+' · Оценката е предварителна: петдневни неприпокриващи се тестови прозорци, ограничена история, непроверено ролване на контрактите, липсват разходи и slippage. Сигналите остават изключени.';
  }
  const stale=age>36;
+ const quality=keys.map(k=>{const q=data.markets[k].data_quality;if(!q)return k+': ролването не е проверено';return k+': '+q.large_daily_log_returns_over_8pct+' движения над 8% (log-return), ролването '+(q.roll_adjustment_verified?'проверено':'НЕПРОВЕРЕНО');});
  box.innerHTML='<strong>Публични данни:</strong> '+(stale?'ОСТАРЕЛИ · ':'')+'Обновени '+new Date(data.generated_at).toLocaleString('bg-BG')+' · Yahoo Finance · приблизително '+Math.round(age)+' ч. назад. Изчисленията са описателни, не са прогнози. '+(Object.keys(data.errors||{}).length?'Непълни данни за '+Object.keys(data.errors).join(', ')+'.':'');
  if(stale)box.style.borderLeftColor='#ef4444';
+ const qualityBox=document.createElement('div');qualityBox.className='notice';qualityBox.textContent='Качество на данните: '+quality.join(' | ')+'. Историческите данни са от публичен непрекъснат фючърсен proxy, не са сертифицирана ролвана серия.';box.after(qualityBox);
  const market=document.getElementById('market');
  const input=document.getElementById('csv');
  const label=document.createElement('p');label.className='muted';label.textContent='Автоматично заредена историческа серия (публичен източник). CSV файлът може да замени графиката само в този браузър.';
