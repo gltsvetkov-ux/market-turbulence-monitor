@@ -1,5 +1,5 @@
 """Public-data MTM snapshot. No brokerage credentials or Credit Pulse integration."""
-import json, math, os
+import json, math
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
@@ -12,11 +12,15 @@ def calc(symbol):
     if isinstance(close,pd.DataFrame): close=close.iloc[:,0]
     close = pd.to_numeric(close,errors="coerce").dropna()
     if len(close)<100: raise RuntimeError("Insufficient observations for "+symbol)
+    if not np.isfinite(close.to_numpy()).all() or (close<=0).any(): raise RuntimeError("Invalid/non-positive prices for "+symbol)
+    if not close.index.is_monotonic_increasing or close.index.has_duplicates: raise RuntimeError("Invalid dates for "+symbol)
     r=np.log(close).diff().dropna()
+    if not np.isfinite(r.to_numpy()).all(): raise RuntimeError("Invalid returns for "+symbol)
     vol20=float(r.tail(20).std()*math.sqrt(252)*100)
     vol60=float(r.tail(60).std()*math.sqrt(252)*100)
     rolling=r.rolling(20).std()*math.sqrt(252)*100
     valid=rolling.dropna()
+    if len(valid)<60: raise RuntimeError("Insufficient volatility history for "+symbol)
     percentile=float((valid<=vol20).mean()*100)
     peak=float(close.cummax().iloc[-1])
     drawdown=(float(close.iloc[-1])/peak-1)*100
@@ -32,7 +36,7 @@ def main():
     for name,ticker in {"ES":"ES=F","NQ":"NQ=F"}.items():
         try: result["markets"][name]=calc(ticker)
         except Exception as exc: result["errors"][name]=str(exc)
-    if not result["markets"]: raise RuntimeError("No valid market data; refusing to overwrite last valid snapshot")
+    if len(result["markets"])!=2: raise RuntimeError("Incomplete ES/NQ data; refusing to overwrite last complete snapshot: "+str(result["errors"]))
     with open("data.json","w",encoding="utf-8") as f:json.dump(result,f,ensure_ascii=False,allow_nan=False,separators=(",",":"))
     print("Snapshot generated:",list(result["markets"]),"errors:",result["errors"])
 if __name__=="__main__":main()
