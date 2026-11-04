@@ -21,7 +21,8 @@ jobs:
           python-version: '3.11'
       - run: pip install --disable-pip-version-check yfinance pandas numpy
       - run: python -m py_compile scripts/refresh_data.py scripts/prospective_validation.py tests/test_risk_model.py
-      - run: python -m unittest discover -s tests -v
+      - name: Run model and prospective-ledger regression tests
+        run: python -m unittest discover -s tests -v
       - run: python scripts/refresh_data.py
       - run: python scripts/prospective_validation.py
       - name: Validate generated snapshot
