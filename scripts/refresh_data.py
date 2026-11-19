@@ -5,6 +5,26 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+def _log_loss(probability, outcome):
+    """Binary log loss with a small numerical guard at the probability bounds."""
+    p = float(np.clip(probability, 1e-15, 1.0 - 1e-15))
+    y = int(outcome)
+    return float(-(y * math.log(p) + (1 - y) * math.log1p(-p)))
+
+def _forecast_at(features, outcomes, anchor, bucket, horizon=5,
+                 min_training=120, min_matches=25):
+    """Build one strictly causal forecast from outcomes matured before anchor."""
+    eligible = [(i, b) for i, b, _ in features
+                if i + horizon < anchor and i in outcomes]
+    if len(eligible) < min_training:
+        return None
+    matches = [outcomes[i] for i, b in eligible if b == bucket]
+    if len(matches) < min_matches:
+        return None
+    baseline = float(np.mean([outcomes[i] for i, _ in eligible]))
+    probability = float((sum(matches) + 20 * baseline) / (len(matches) + 20))
+    return probability, baseline, len(eligible), len(matches)
+
 def risk_model(close, symbol):
     """Expanding-window, strictly past-outcome conditional risk model.
     Event: within next five daily closes, loss of at least 2% ES / 3% NQ
@@ -34,27 +54,22 @@ def risk_model(close, symbol):
     predictions=[]
     for t,bucket,momentum in features:
         if t not in outcome: continue
-        eligible=[(i,b) for i,b,_ in features if i+horizon<t and i in outcome]
-        if len(eligible)<120: continue
-        matches=[outcome[i] for i,b in eligible if b==bucket]
-        if len(matches)<25: continue
-        # Laplace shrinkage toward unconditional past event frequency
-        base=np.mean([outcome[i] for i,_ in eligible])
-        p=(sum(matches)+20*base)/(len(matches)+20)
-        predictions.append((t,float(p),outcome[t],float(base)))
+        forecast = _forecast_at(features, outcome, t, bucket, horizon)
+        if forecast is None: continue
+        p, base, _, _ = forecast
+        predictions.append((t,p,outcome[t],base))
     current=features[-1] if features else None
     if current is None: return {"status":"insufficient_history","signal":"disabled_unvalidated","signal_eligible":False,"threshold_pct":round(threshold*100,1)}
     t,bucket,momentum=current
-    eligible=[(i,b) for i,b,_ in features if i+horizon<t and i in outcome]
-    matches=[outcome[i] for i,b in eligible if b==bucket]
-    if len(eligible)<120 or len(matches)<25:
+    current_forecast = _forecast_at(features, outcome, t, bucket, horizon)
+    if current_forecast is None:
+        matches=[outcome[i] for i,b,_ in features if i+horizon<t and i in outcome and b==bucket]
         return {"status":"insufficient_history","regime":bucket,"matching_samples":len(matches),"signal":"disabled_unvalidated","signal_eligible":False,"threshold_pct":round(threshold*100,1)}
-    base=float(np.mean([outcome[i] for i,_ in eligible]))
-    prob=float((sum(matches)+20*base)/(len(matches)+20))
+    prob,base,training_samples,matching_samples=current_forecast
     result={"status":"experimental","event":"5d_close_drawdown","threshold_pct":round(threshold*100,1),
       "horizon_days":horizon,"regime":bucket,"probability_pct":round(100*prob,1),
-      "base_rate_pct":round(100*base,1),"matching_samples":len(matches),
-      "training_samples":len(eligible),"momentum20_pct":round(100*momentum,2),
+      "base_rate_pct":round(100*base,1),"matching_samples":matching_samples,
+      "training_samples":training_samples,"momentum20_pct":round(100*momentum,2),
       "signal":("risk_high" if prob>=max(0.35,base*1.5) else "risk_elevated" if prob>=max(0.2,base*1.2) else "risk_normal")}
     # Non-overlapping evaluation anchors: only one 5-day label per block.
     # Train strictly on outcomes whose full 5-day horizon has ended.
@@ -105,6 +120,9 @@ def risk_model(close, symbol):
                 "raw_brier":round(raw_holdout,5),
                 "calibrated_brier":round(calibrated_holdout,5),
                 "baseline_brier":round(baseline_holdout,5),
+                "raw_log_loss":round(float(np.mean([_log_loss(r,y) for _,r,a,y,b in holdout])),5),
+                "calibrated_log_loss":round(float(np.mean([_log_loss(a,y) for _,r,a,y,b in holdout])),5),
+                "baseline_log_loss":round(float(np.mean([_log_loss(b,y) for _,r,a,y,b in holdout])),5),
                 "beats_baseline":bool(calibrated_holdout < baseline_holdout),
                 "pristine_holdout":False,
                 "limitation":"Historical data previously examined during development; prospective confirmation required"
@@ -114,6 +132,9 @@ def risk_model(close, symbol):
             "calibrated_brier":round(adjusted_brier,5),
             "raw_brier_same_period":round(raw_comparable_brier,5),
             "baseline_brier_same_period":round(comparable_baseline,5),
+            "calibrated_log_loss":round(float(np.mean([_log_loss(a,y) for _,r,a,y,b in calibrated_tests])),5),
+            "raw_log_loss_same_period":round(float(np.mean([_log_loss(r,y) for _,r,a,y,b in calibrated_tests])),5),
+            "baseline_log_loss_same_period":round(float(np.mean([_log_loss(b,y) for _,r,a,y,b in calibrated_tests])),5),
             "mean_forecast_minus_event_rate_pp":round(100*calibration_bias,2),
             "improves_raw":bool(adjusted_brier < raw_comparable_brier),
             "beats_baseline":bool(adjusted_brier < comparable_baseline)
@@ -122,6 +143,8 @@ def risk_model(close, symbol):
     if len(independent) >= 20:
         brier = float(np.mean([(p-y)**2 for _,p,y,_ in independent]))
         baseline = float(np.mean([(b-y)**2 for _,p,y,b in independent]))
+        model_log_loss = float(np.mean([_log_loss(p,y) for _,p,y,_ in independent]))
+        baseline_log_loss = float(np.mean([_log_loss(b,y) for _,p,y,b in independent]))
         wins = brier < baseline
         actual_rate = float(np.mean([y for _,p,y,b in independent]))
         forecast_mean = float(np.mean([p for _,p,y,b in independent]))
@@ -134,13 +157,15 @@ def risk_model(close, symbol):
         ci_low,ci_high = np.percentile(improvements,[2.5,97.5])
         result["walk_forward"] = {
             "samples":len(independent), "brier":round(brier,4),
+            "log_loss":round(model_log_loss,4),
             "actual_event_rate_pct":round(100*actual_rate,1),
             "mean_forecast_pct":round(100*forecast_mean,1),
             "brier_skill_score":round(float(skill),4) if skill is not None else None,
             "brier_improvement_ci95":[round(float(ci_low),5),round(float(ci_high),5)],
             "statistically_positive":bool(ci_low>0),
             "confidence_method":"paired_iid_bootstrap_nonoverlapping_5session_windows_1000_reps",
-            "baseline_brier":round(baseline,4), "beats_baseline":bool(wins),
+            "baseline_brier":round(baseline,4), "baseline_log_loss":round(baseline_log_loss,4),
+            "beats_baseline":bool(wins),"beats_baseline_log_loss":bool(model_log_loss < baseline_log_loss),
             "validated":False,
             "evaluation":"nonoverlapping_5d_test_labels; expanding_train; embargo_5d",
             "limitations":"Unverified continuous futures roll adjustments; calibration and trading costs not independently validated"}
@@ -196,3 +221,4 @@ def main():
     with open("data.json","w",encoding="utf-8") as f:json.dump(result,f,ensure_ascii=False,allow_nan=False,separators=(",",":"))
     print("Snapshot generated:",list(result["markets"]),"errors:",result["errors"])
 if __name__=="__main__":main()
+

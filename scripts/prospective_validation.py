@@ -29,10 +29,19 @@ def update(snapshot, ledger):
         r["outcome_matured_on"]=history[i+5]["date"]
         r["brier"] = round((float(r["calibrated_probability"])-outcome)**2,8)
         r["baseline_brier"] = round((float(r["baseline_probability"])-outcome)**2,8)
+        p=min(1.0-1e-15,max(1e-15,float(r["calibrated_probability"])))
+        b=min(1.0-1e-15,max(1e-15,float(r["baseline_probability"])))
+        r["log_loss"] = round(-(outcome*math.log(p)+(1-outcome)*math.log1p(-p)),8)
+        r["baseline_log_loss"] = round(-(outcome*math.log(b)+(1-outcome)*math.log1p(-b)),8)
     for market in ("ES","NQ"):
         m=snapshot["markets"][market]
         day=m["asof"]
         if day<=FREEZE_DATE or (market,day) in ids: continue
+        # An unverified continuous-futures roll series must not enter the
+        # prospective scorecard because rolls can alter features and labels.
+        # Existing frozen records remain untouched.
+        if not m.get("data_quality", {}).get("roll_adjustment_verified", False):
+            continue
         # Nonoverlapping forecasts: >= 5 subsequent trading sessions since prior anchor.
         previous=[r for r in records if r["market"]==market]
         history=m["history"]
@@ -60,3 +69,4 @@ def main():
     print("Prospective records:",len(updated["forecasts"]),"graded:",sum(x["outcome"] is not None for x in updated["forecasts"]))
 
 if __name__=="__main__":main()
+
