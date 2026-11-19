@@ -1,0 +1,22 @@
+name: MTM regression tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/tests.yml'
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --disable-pip-version-check yfinance pandas numpy
+      - run: python -m py_compile scripts/refresh_data.py scripts/prospective_validation.py tests/test_risk_model.py tests/test_prospective_validation.py
+      - run: python -m unittest discover -s tests -v
