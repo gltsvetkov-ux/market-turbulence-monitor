@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-from scripts.refresh_data import risk_model
+from scripts.refresh_data import risk_model, _forecast_at
 
 class RiskModelTests(unittest.TestCase):
     def make_prices(self,n=650,seed=19):
@@ -24,13 +24,16 @@ class RiskModelTests(unittest.TestCase):
                 self.assertLessEqual(m["probability_pct"],100)
 
     def test_no_future_leakage_into_current_prediction(self):
-        # Past-only forecast at t must be unaffected by additional future observations.
-        x=self.make_prices(720)
-        earlier=risk_model(x.iloc[:660],"ES=F")
-        extended=risk_model(x.iloc[:661],"ES=F")
-        # If a new observation arrives, the forecast can change, but both remain disabled.
-        self.assertFalse(earlier.get("signal_eligible",False))
-        self.assertFalse(extended.get("signal_eligible",False))
+        # Even if the caller holds later features and outcomes, a forecast at t
+        # may consume only labels whose full horizon ended strictly before t.
+        features=[(i,"normal",0.0) for i in range(220)]
+        outcomes={i:int(i%4==0) for i in range(195)}
+        before=_forecast_at(features,outcomes,200,"normal")
+        altered=dict(outcomes)
+        altered.update({i:1-outcomes.get(i,0) for i in range(195,220)})
+        after=_forecast_at(features,altered,200,"normal")
+        self.assertEqual(before,after)
+        self.assertEqual(before[2],195)  # indices 0..194 with five-session embargo
 
     def test_deterministic_repeated_evaluation(self):
         x=self.make_prices(950)
@@ -42,6 +45,9 @@ class RiskModelTests(unittest.TestCase):
         self.assertLessEqual(wf["brier_improvement_ci95"][0],wf["brier_improvement_ci95"][1])
         self.assertGreaterEqual(wf["actual_event_rate_pct"],0)
         self.assertLessEqual(wf["actual_event_rate_pct"],100)
+        self.assertGreaterEqual(wf["log_loss"],0)
+        self.assertGreaterEqual(wf["baseline_log_loss"],0)
+        self.assertIn("beats_baseline_log_loss",wf)
 
     def test_calibration_uses_only_matured_prior_predictions(self):
         x=self.make_prices(950)
@@ -55,6 +61,9 @@ class RiskModelTests(unittest.TestCase):
         self.assertGreater(o["samples"],20)
         self.assertTrue(all(0<=o[k]<=1 for k in ("calibrated_brier","raw_brier_same_period","baseline_brier_same_period")))
         self.assertFalse(m["signal_eligible"])
+        self.assertGreaterEqual(o["calibrated_log_loss"],0)
+        self.assertGreaterEqual(o["raw_log_loss_same_period"],0)
+        self.assertGreaterEqual(o["baseline_log_loss_same_period"],0)
 
     def test_future_price_does_not_change_historical_forecast(self):
         x=self.make_prices(950)
@@ -99,3 +108,4 @@ class RiskModelTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
