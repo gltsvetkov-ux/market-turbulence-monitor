@@ -62,8 +62,10 @@
       "threshold_pct": 2.0,
       "calibrated_probability": 0.163,
       "baseline_probability": 0.201,
-      "outcome": null,
-      "outcome_matured_on": null
+      "outcome": 1,
+      "outcome_matured_on": "2026-11-25",
+      "brier": 0.700569,
+      "baseline_brier": 0.638401
     },
     {
       "market": "NQ",
@@ -73,6 +75,30 @@
       "threshold_pct": 3.0,
       "calibrated_probability": 0.159,
       "baseline_probability": 0.19,
+      "outcome": 1,
+      "outcome_matured_on": "2026-11-25",
+      "brier": 0.707281,
+      "baseline_brier": 0.6561
+    },
+    {
+      "market": "ES",
+      "forecast_date": "2026-11-25",
+      "model_version": "mtm-calibrated-v1-2026-11-03",
+      "reference_close": 7163.0,
+      "threshold_pct": 2.0,
+      "calibrated_probability": 0.187,
+      "baseline_probability": 0.20600000000000002,
+      "outcome": null,
+      "outcome_matured_on": null
+    },
+    {
+      "market": "NQ",
+      "forecast_date": "2026-11-25",
+      "model_version": "mtm-calibrated-v1-2026-11-03",
+      "reference_close": 25870.25,
+      "threshold_pct": 3.0,
+      "calibrated_probability": 0.17600000000000002,
+      "baseline_probability": 0.195,
       "outcome": null,
       "outcome_matured_on": null
     }
